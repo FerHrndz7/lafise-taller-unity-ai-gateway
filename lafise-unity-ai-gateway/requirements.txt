@@ -1,0 +1,3 @@
+# Librerías de clúster para el taller Unity AI Gateway (DBR 17.3 LTS)
+# Solo hace falta si el workspace no tiene salida a PyPI para %pip. El databricks-sdk del runtime ya alcanza.
+faker>=25.0.0
