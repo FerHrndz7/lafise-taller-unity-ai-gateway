@@ -155,7 +155,9 @@ while time.time() - start < 180 and respuesta is None:
     try:
         respuesta = ask_model(MKT_FQN, "Escribe un eslogan corto y cercano para la tarjeta de crédito de un banco "
                                        "regional centroamericano. Sin promesas de tasas ni montos. Responde solo con el eslogan, sin formato.")
-    except Exception:
+    except Exception as e:
+        if any(c in str(e)[:4] for c in ("401", "403")):
+            raise PermissionError(f"Sin permiso para consultar {MKT_FQN}: {str(e)[:300]}")
         time.sleep(6)
 print("Eslogan:", respuesta)
 

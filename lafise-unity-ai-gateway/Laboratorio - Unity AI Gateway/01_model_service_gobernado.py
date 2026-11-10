@@ -134,6 +134,9 @@ def wait_queryable(fqn, timeout=180):
             return True
         except Exception as e:
             last = e
+            if any(c in str(e)[:4] for c in ("401", "403")):  # permisos: no tiene sentido reintentar
+                raise PermissionError(f"Sin permiso para consultar {fqn}: {str(e)[:300]}. Pide EXECUTE sobre el modelo "
+                                      "system.ai.* que usa el servicio (y USE CATALOG/USE SCHEMA en system.ai).")
             time.sleep(6)
     raise TimeoutError(f"{fqn} no quedó consultable tras {timeout}s. Último error: {str(last)[:300]}")
 
