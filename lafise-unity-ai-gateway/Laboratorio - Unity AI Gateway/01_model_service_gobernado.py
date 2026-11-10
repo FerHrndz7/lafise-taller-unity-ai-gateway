@@ -142,29 +142,45 @@ def wait_queryable(fqn, timeout=180):
 # MAGIC %md
 # MAGIC ## Paso 1 — Elegir el foundation model que vamos a gobernar
 # MAGIC
-# MAGIC Listamos en tiempo de ejecución los modelos **`system.ai.databricks-*`** (pay-per-token) — los nombres
-# MAGIC cambian con el tiempo, así que nunca conviene dejarlos fijos en el código — y nos quedamos con los que tienen
-# MAGIC pay-per-token **activo** (Unity Catalog sigue listando algunos modelos ya retirados).
+# MAGIC Los nombres de los modelos **`system.ai.databricks-*`** (pay-per-token) cambian con el tiempo y Unity Catalog sigue
+# MAGIC listando algunos ya retirados, así que no conviene dejarlos fijos en el código. Probamos en orden una lista corta
+# MAGIC de modelos preferidos y nos quedamos con el primero que tiene pay-per-token **activo**.
 
 # COMMAND ----------
 
-models = w.api_client.do(
-    "GET", "/api/2.1/unity-catalog/models",
-    query={"catalog_name": "system", "schema_name": "ai", "max_results": 400},
-).get("registered_models", [])
-fm = sorted(m["full_name"] for m in models if m["full_name"].startswith("system.ai.databricks-"))
-_ppt = {e.name for e in w.serving_endpoints.list() if e.name.startswith("databricks-")}
-fm = [n for n in fm if n.removeprefix("system.ai.") in _ppt]
-print(f"Foundation models activos: {len(fm)}")
+def modelo_activo(nombre):
+    """True si el modelo tiene pay-per-token activo (existe su endpoint databricks-*). Una sola consulta rápida."""
+    try:
+        w.serving_endpoints.get(nombre.removeprefix("system.ai."))
+        return True
+    except Exception:
+        return False
 
-# Preferimos un modelo de chat sólido y económico; si no está, tomamos el primero disponible.
+def elegir_modelos(preferidos, n=1, excluir=()):
+    """Primeros n modelos activos: primero los preferidos y, si no alcanzan, el resto de system.ai (uno por uno).
+    No listamos todos los endpoints del workspace: en workspaces grandes esa llamada puede tardar demasiado."""
+    elegidos = [p for p in preferidos if p not in excluir and modelo_activo(p)][:n]
+    if len(elegidos) < n:
+        resto = sorted(m["full_name"] for m in w.api_client.do(
+            "GET", "/api/2.1/unity-catalog/models",
+            query={"catalog_name": "system", "schema_name": "ai", "max_results": 400}).get("registered_models", [])
+            if m["full_name"].startswith("system.ai.databricks-") and m["full_name"] not in preferidos)
+        for m in resto:
+            if len(elegidos) == n:
+                break
+            if m not in excluir and modelo_activo(m):
+                elegidos.append(m)
+    assert elegidos, "No hay foundation models pay-per-token activos en system.ai (revisa las Foundation Model APIs)"
+    return elegidos
+
+# Preferimos un modelo de chat sólido y económico; si no está activo, el siguiente.
 PREFERRED = [
     "system.ai.databricks-claude-haiku-4-5",
     "system.ai.databricks-gpt-5-6-sol",
     "system.ai.databricks-gemini-3-5-flash",
     "system.ai.databricks-meta-llama-3-3-70b-instruct",
 ]
-BASE_MODEL = next((p for p in PREFERRED if p in fm), fm[0])
+BASE_MODEL = elegir_modelos(PREFERRED)[0]
 MODEL_REF = f"models/{BASE_MODEL}"
 print(f"Modelo a gobernar: {BASE_MODEL}")
 
